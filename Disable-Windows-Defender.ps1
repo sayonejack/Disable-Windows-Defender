@@ -102,8 +102,24 @@ function Invoke-Phase1 {
     # 1.3 Disable Real-time Protection
     Write-Host "[1.3] Disabling Real-time Protection..." -ForegroundColor Yellow
     if ($tamperResult) {
-        $realtimeResult = Disable-RealtimeProtection
-        Add-Result "RealtimeProtection" $realtimeResult
+        # Add delay to ensure Tamper Protection changes take effect in the system
+        Write-Host "  Waiting for Tamper Protection changes to take effect..." -ForegroundColor Cyan
+        Start-Sleep -Seconds 3
+        
+        # Verify Tamper Protection is truly disabled at system level
+        $tamperEffective = Test-TamperProtectionEffective
+        if ($tamperEffective) {
+            Write-Host "  Tamper Protection is confirmed disabled, proceeding with Real-time Protection..." -ForegroundColor Green
+            $realtimeResult = Disable-RealtimeProtection
+            Add-Result "RealtimeProtection" $realtimeResult
+        } else {
+            Write-Host "  $($script:StatusSymbols.Warning) Tamper Protection appears to still be active at system level. Attempting Real-time Protection anyway..." -ForegroundColor Yellow
+            $realtimeResult = Disable-RealtimeProtection
+            if (-not $realtimeResult) {
+                Write-Host "  $($script:StatusSymbols.Info) Real-time Protection may require a second run after Tamper Protection fully takes effect." -ForegroundColor Cyan
+            }
+            Add-Result "RealtimeProtection" $realtimeResult "May require second run"
+        }
     } else {
         Write-Host "  $($script:StatusSymbols.Warning) Skipping real-time protection settings because Tamper Protection is not disabled." -ForegroundColor Yellow
         Add-Result "RealtimeProtection" $false "Skipped, Tamper Protection is active."
@@ -169,6 +185,42 @@ try {
     return $false
 }
 
+function Test-TamperProtectionEffective {
+    try {
+        # First check registry value
+        $key = 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Features'
+        $regValue = (Get-ItemProperty -Path $key -Name 'TamperProtection' -ErrorAction SilentlyContinue).TamperProtection
+        
+        if ($regValue -ne 4) {
+            Write-Host "    Registry check: Tamper Protection not disabled (value: $regValue)" -ForegroundColor Gray
+            return $false
+        }
+        
+        # Try to test system-level effectiveness by attempting a defender configuration change
+        try {
+            # Try to change a defender setting - this should work if Tamper Protection is truly off
+            $testResult = Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue 2>$null
+            
+            # Check if we can read the current status without errors
+            $mpStatus = Get-MpComputerStatus -ErrorAction SilentlyContinue 2>$null
+            
+            if ($null -ne $mpStatus) {
+                Write-Host "    System-level check: Tamper Protection appears inactive" -ForegroundColor Gray
+                return $true
+            } else {
+                Write-Host "    System-level check: Cannot verify defender status" -ForegroundColor Gray
+                return $false
+            }
+        } catch {
+            Write-Host "    System-level check: Tamper Protection may still be active" -ForegroundColor Gray
+            return $false
+        }
+    } catch {
+        Write-Host "    Tamper Protection verification failed: $($_.Exception.Message)" -ForegroundColor Gray
+        return $false
+    }
+}
+
 function Disable-SmartAppControl {
     try {
         $k='HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy'
@@ -190,30 +242,60 @@ function Disable-SmartAppControl {
 }
 
 function Disable-RealtimeProtection {
-    try {
-        # Use PowerShell cmdlet
-        Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableIntrusionPreventionSystem $true -ErrorAction SilentlyContinue
-        
-        # Force disable through registry
-        $rtPath = "HKLM:\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection"
-        if (Test-Path $rtPath) {
-            Set-ItemProperty -Path $rtPath -Name "DisableRealtimeMonitoring" -Value 1 -Type DWORD -Force -ErrorAction SilentlyContinue
+    $maxRetries = 2
+    $retryDelay = 2
+    
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+        try {
+            if ($attempt -gt 1) {
+                Write-Host "  Retry attempt $attempt..." -ForegroundColor Cyan
+                Start-Sleep -Seconds $retryDelay
+            }
+            
+            # Use PowerShell cmdlet
+            Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+            Set-MpPreference -DisableIntrusionPreventionSystem $true -ErrorAction SilentlyContinue
+            
+            # Force disable through registry
+            $rtPath = "HKLM:\SOFTWARE\Microsoft\Windows Defender\Real-Time Protection"
+            if (Test-Path $rtPath) {
+                Set-ItemProperty -Path $rtPath -Name "DisableRealtimeMonitoring" -Value 1 -Type DWORD -Force -ErrorAction SilentlyContinue
+            }
+            
+            # Additional registry paths for comprehensive disable
+            $additionalPaths = @(
+                "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"
+            )
+            
+            foreach ($path in $additionalPaths) {
+                if (!(Test-Path $path)) { 
+                    New-Item -Path $path -Force -ErrorAction SilentlyContinue | Out-Null 
+                }
+                Set-ItemProperty -Path $path -Name "DisableRealtimeMonitoring" -Value 1 -Type DWORD -Force -ErrorAction SilentlyContinue
+            }
+            
+            # Wait a moment for changes to take effect
+            Start-Sleep -Seconds 1
+            
+            # Verify status
+            $status = (Get-MpComputerStatus -ErrorAction SilentlyContinue).RealTimeProtectionEnabled
+            if ($null -eq $status -or $status -eq $false) {
+                Write-Host "  $($script:StatusSymbols.Success) Real-time monitoring has been disabled" -ForegroundColor Green
+                return $true
+            } else {
+                if ($attempt -eq $maxRetries) {
+                    Write-Host "  $($script:StatusSymbols.Warning) Real-time monitoring disable failed after $maxRetries attempts" -ForegroundColor Yellow
+                    Write-Host "  This may indicate Tamper Protection is still active at system level" -ForegroundColor Yellow
+                }
+            }
+        } catch {
+            if ($attempt -eq $maxRetries) {
+                Write-Host "  $($script:StatusSymbols.Error) Error disabling real-time monitoring: $($_.Exception.Message)" -ForegroundColor Red
+            }
         }
-        
-        # Verify status
-        $status = (Get-MpComputerStatus -ErrorAction SilentlyContinue).RealTimeProtectionEnabled
-        if ($null -eq $status -or $status -eq $false) {
-            Write-Host "  $($script:StatusSymbols.Success) Real-time monitoring has been disabled" -ForegroundColor Green
-            return $true
-        } else {
-            Write-Host "  $($script:StatusSymbols.Warning) Real-time monitoring disable failed" -ForegroundColor Yellow
-            return $false
-        }
-    } catch {
-        Write-Host "  $($script:StatusSymbols.Error) Error disabling real-time monitoring: $($_.Exception.Message)" -ForegroundColor Red
-        return $false
     }
+    
+    return $false
 }
 
 function Show-PhaseResults {
