@@ -133,6 +133,7 @@ set CURRENT_EXEC_CP=!CURRENT_EXEC_CP: =!
 :: Execute PowerShell script with UTF-8 encoding to handle text symbols
 echo Executing PowerShell script with UTF-8 encoding for proper character display...
 chcp 65001 >nul 2>&1
+powershell.exe -NoProfile -Command "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::InputEncoding = [System.Text.Encoding]::UTF8; & '.\Enable-Windows-Defender.ps1' -Phase2}"
 goto END
 
