@@ -1,7 +1,7 @@
 param(
-    [switch]$Phase1,    # Phase 1: Basic disable
-    [switch]$Phase2,    # Phase 2: Services and registry
-    [switch]$Phase3,    # Phase 3: Advanced settings and cleanup
+    [switch]$Phase1, # Phase 1: Basic disable
+    [switch]$Phase2, # Phase 2: Services and registry
+    [switch]$Phase3, # Phase 3: Advanced settings and cleanup
     [switch]$All        # Execute all phases at once
 )
 
@@ -13,9 +13,9 @@ param(
 $script:StatusSymbols = @{
     Success = "[OK]"     # Success
     Warning = "[!]"      # Warning  
-    Error = "[X]"        # Error
-    Info = "[i]"         # Info
-    Rocket = "[>>]"      # Execution
+    Error   = "[X]"        # Error
+    Info    = "[i]"         # Info
+    Rocket  = "[>>]"      # Execution
 }
 
 # Set console encoding to UTF-8 for consistent display
@@ -23,7 +23,8 @@ try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     [Console]::InputEncoding = [System.Text.Encoding]::UTF8
     $OutputEncoding = [System.Text.Encoding]::UTF8
-} catch {
+}
+catch {
     # Encoding setting failed, continue with default
 }
 
@@ -58,12 +59,14 @@ function Initialize-Script {
     if (Test-Path $psExecInScript) {
         $script:PsExecPath = $psExecInScript
         Write-Host "$($script:StatusSymbols.Success) PsExec found: $psExecInScript" -ForegroundColor Green
-    } else {
+    }
+    else {
         $psExecInPath = Get-Command PsExec -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
         if ($null -ne $psExecInPath) {
             $script:PsExecPath = $psExecInPath
             Write-Host "$($script:StatusSymbols.Success) PsExec found in system path: $psExecInPath" -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "$($script:StatusSymbols.Warning) PsExec not found. Please download from Sysinternals and place in script directory or system path:" -ForegroundColor Yellow
             Write-Host "https://learn.microsoft.com/en-us/sysinternals/downloads/psexec" -ForegroundColor Cyan
         }
@@ -75,8 +78,8 @@ function Initialize-Script {
 function Add-Result {
     param($Name, $Success, $Details = "")
     $script:Results[$Name] = @{
-        Success = $Success
-        Details = $Details
+        Success   = $Success
+        Details   = $Details
         Timestamp = Get-Date
     }
 }
@@ -112,7 +115,8 @@ function Invoke-Phase1 {
             Write-Host "  Tamper Protection is confirmed disabled, proceeding with Real-time Protection..." -ForegroundColor Green
             $realtimeResult = Disable-RealtimeProtection
             Add-Result "RealtimeProtection" $realtimeResult
-        } else {
+        }
+        else {
             Write-Host "  $($script:StatusSymbols.Warning) Tamper Protection appears to still be active at system level. Attempting Real-time Protection anyway..." -ForegroundColor Yellow
             $realtimeResult = Disable-RealtimeProtection
             if (-not $realtimeResult) {
@@ -120,7 +124,8 @@ function Invoke-Phase1 {
             }
             Add-Result "RealtimeProtection" $realtimeResult "May require second run"
         }
-    } else {
+    }
+    else {
         Write-Host "  $($script:StatusSymbols.Warning) Skipping real-time protection settings because Tamper Protection is not disabled." -ForegroundColor Yellow
         Add-Result "RealtimeProtection" $false "Skipped, Tamper Protection is active."
     }
@@ -157,7 +162,8 @@ try {
                 return $true
             }
             Write-Host "  $($script:StatusSymbols.Warning) PsExec execution completed, but verification failed. Trying regular method..." -ForegroundColor Yellow
-        } catch {
+        }
+        catch {
             Write-Host "  $($script:StatusSymbols.Error) Error using PsExec: $($_.Exception.Message)" -ForegroundColor Red
         }
     }
@@ -165,14 +171,15 @@ try {
     # Regular method
     try {
         Write-Host "  Trying regular method..." -ForegroundColor Cyan
-        $key='HKLM:\SOFTWARE\Microsoft\Windows Defender\Features'
+        $key = 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Features'
         if (!(Test-Path $key)) { return $false }
         Set-ItemProperty -Path $key -Name 'TamperProtection' -Value 4 -Force -ErrorAction Stop
         if (((Get-ItemProperty -Path $key -Name 'TamperProtection' -ErrorAction SilentlyContinue).TamperProtection -eq 4)) {
             Write-Host "  $($script:StatusSymbols.Success) Successfully disabled Tamper Protection" -ForegroundColor Green
             return $true
         }
-    } catch {}
+    }
+    catch {}
 
     # If failed, provide manual operation guidance
     Write-Host ""
@@ -207,15 +214,18 @@ function Test-TamperProtectionEffective {
             if ($null -ne $mpStatus) {
                 Write-Host "    System-level check: Tamper Protection appears inactive" -ForegroundColor Gray
                 return $true
-            } else {
+            }
+            else {
                 Write-Host "    System-level check: Cannot verify defender status" -ForegroundColor Gray
                 return $false
             }
-        } catch {
+        }
+        catch {
             Write-Host "    System-level check: Tamper Protection may still be active" -ForegroundColor Gray
             return $false
         }
-    } catch {
+    }
+    catch {
         Write-Host "    Tamper Protection verification failed: $($_.Exception.Message)" -ForegroundColor Gray
         return $false
     }
@@ -223,7 +233,7 @@ function Test-TamperProtectionEffective {
 
 function Disable-SmartAppControl {
     try {
-        $k='HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy'
+        $k = 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy'
         if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
         Set-ItemProperty -Path $k -Name 'VerifiedAndReputablePolicyState' -Value 0 -Type DWORD -Force -ErrorAction Stop
         
@@ -231,11 +241,13 @@ function Disable-SmartAppControl {
         if ($value -eq 0) {
             Write-Host "  $($script:StatusSymbols.Success) Smart App Control has been disabled" -ForegroundColor Green
             return $true
-        } else {
+        }
+        else {
             Write-Host "  $($script:StatusSymbols.Warning) Smart App Control disable failed" -ForegroundColor Yellow
             return $false
         }
-    } catch {
+    }
+    catch {
         Write-Host "  $($script:StatusSymbols.Error) Error setting Smart App Control: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
@@ -282,13 +294,15 @@ function Disable-RealtimeProtection {
             if ($null -eq $status -or $status -eq $false) {
                 Write-Host "  $($script:StatusSymbols.Success) Real-time monitoring has been disabled" -ForegroundColor Green
                 return $true
-            } else {
+            }
+            else {
                 if ($attempt -eq $maxRetries) {
                     Write-Host "  $($script:StatusSymbols.Warning) Real-time monitoring disable failed after $maxRetries attempts" -ForegroundColor Yellow
                     Write-Host "  This may indicate Tamper Protection is still active at system level" -ForegroundColor Yellow
                 }
             }
-        } catch {
+        }
+        catch {
             if ($attempt -eq $maxRetries) {
                 Write-Host "  $($script:StatusSymbols.Error) Error disabling real-time monitoring: $($_.Exception.Message)" -ForegroundColor Red
             }
@@ -348,7 +362,8 @@ function Show-FinalSummary {
     foreach ($item in $script:Results.GetEnumerator()) {
         if ($item.Value.Success) {
             Write-Host "  $($script:StatusSymbols.Success) $($item.Key)" -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "  $($script:StatusSymbols.Error) $($item.Key) - $($item.Value.Details)" -ForegroundColor Red
         }
     }
@@ -362,7 +377,8 @@ function Show-FinalSummary {
         Write-Host "$($script:StatusSymbols.Warning) Important Notes:" -ForegroundColor Yellow
         Write-Host "  - Please check the items marked with $($script:StatusSymbols.Error) above." -ForegroundColor Yellow
         Write-Host "  - If Tamper Protection was not successfully disabled, please manually disable it and re-run." -ForegroundColor Yellow
-    } else {
+    }
+    else {
         Write-Host "$($script:StatusSymbols.Success) All selected configurations have been successfully applied!" -ForegroundColor Green
     }
     Write-Host "It is recommended to restart the system to ensure all changes take full effect." -ForegroundColor Cyan
@@ -441,11 +457,13 @@ function Set-GroupPolicies {
             $currentValue = (Get-ItemProperty -Path $policy.Path -Name $policy.Name -ErrorAction SilentlyContinue)."$($policy.Name)"
             if ($currentValue -eq $policy.Value) {
                 Write-Host "    $($script:StatusSymbols.Success) $($policy.DisplayName) has been set" -ForegroundColor Green
-            } else {
+            }
+            else {
                 Write-Host "    $($script:StatusSymbols.Warning) $($policy.DisplayName) setting failed (Expected: $($policy.Value), Actual: $currentValue)" -ForegroundColor Yellow
                 $allSuccess = $false
             }
-        } catch {
+        }
+        catch {
             Write-Host "    $($script:StatusSymbols.Error) $($policy.DisplayName) error during setting: $($_.Exception.Message)" -ForegroundColor Red
             $allSuccess = $false
         }
@@ -543,42 +561,45 @@ if (`$successCount -ge (`$totalCount - 2)) {
         
         Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
 
-                 # Verify and categorize results
-         $disabledServices = @()
-         $protectedServices = @()
-         $failedServices = @()
-         $nonExistentServices = @()
+        # Verify and categorize results
+        $disabledServices = @()
+        $protectedServices = @()
+        $failedServices = @()
+        $nonExistentServices = @()
          
-         foreach ($service in $services) {
-             $servicePath = "HKLM:\SYSTEM\CurrentControlSet\Services\$service"
-             if (Test-Path $servicePath) {
-                 $startValue = (Get-ItemProperty -Path $servicePath -Name "Start" -ErrorAction SilentlyContinue).Start
-                 $startType = switch ($startValue) {
-                     0 { "Boot" }
-                     1 { "System" }
-                     2 { "Automatic" }
-                     3 { "Manual" }
-                     4 { "Disabled" }
-                     default { "Unknown($startValue)" }
-                 }
+        foreach ($service in $services) {
+            $servicePath = "HKLM:\SYSTEM\CurrentControlSet\Services\$service"
+            if (Test-Path $servicePath) {
+                $startValue = (Get-ItemProperty -Path $servicePath -Name "Start" -ErrorAction SilentlyContinue).Start
+                $startType = switch ($startValue) {
+                    0 { "Boot" }
+                    1 { "System" }
+                    2 { "Automatic" }
+                    3 { "Manual" }
+                    4 { "Disabled" }
+                    default { "Unknown($startValue)" }
+                }
                  
-                 if ($startValue -eq 4) {
-                     Write-Host "    $($script:StatusSymbols.Success) $service has been disabled" -ForegroundColor Green
-                     $disabledServices += $service
-                 } elseif ($startValue -in @(0, 1)) {
-                     # Boot/System services are often protected by Windows
-                     Write-Host "    $($script:StatusSymbols.Info) $service is system-protected ($startType)" -ForegroundColor Cyan
-                     $protectedServices += $service
-                 } else {
-                     Write-Host "    $($script:StatusSymbols.Warning) $service disable failed ($startType)" -ForegroundColor Yellow
-                     $failedServices += $service
-                 }
-             } else {
-                 Write-Host "    $($script:StatusSymbols.Info) $service service not found (may be already removed)" -ForegroundColor Gray
-                 $nonExistentServices += $service
-                 $disabledServices += $service  # Count as success if service doesn't exist
-             }
-         }
+                if ($startValue -eq 4) {
+                    Write-Host "    $($script:StatusSymbols.Success) $service has been disabled" -ForegroundColor Green
+                    $disabledServices += $service
+                }
+                elseif ($startValue -in @(0, 1)) {
+                    # Boot/System services are often protected by Windows
+                    Write-Host "    $($script:StatusSymbols.Info) $service is system-protected ($startType)" -ForegroundColor Cyan
+                    $protectedServices += $service
+                }
+                else {
+                    Write-Host "    $($script:StatusSymbols.Warning) $service disable failed ($startType)" -ForegroundColor Yellow
+                    $failedServices += $service
+                }
+            }
+            else {
+                Write-Host "    $($script:StatusSymbols.Info) $service service not found (may be already removed)" -ForegroundColor Gray
+                $nonExistentServices += $service
+                $disabledServices += $service  # Count as success if service doesn't exist
+            }
+        }
         
         # Provide detailed feedback
         if ($disabledServices.Count -gt 0) {
@@ -591,43 +612,44 @@ if (`$successCount -ge (`$totalCount - 2)) {
             Write-Host "    Failed to disable: $($failedServices -join ', ')" -ForegroundColor Red
         }
         
-                 # Calculate weighted success rate (primary services are more important)
-         $primaryDisabled = ($disabledServices | Where-Object { $_ -in $primaryServices }).Count
-         $primaryProtected = ($protectedServices | Where-Object { $_ -in $primaryServices }).Count
-         $primaryFailed = ($failedServices | Where-Object { $_ -in $primaryServices }).Count
+        # Calculate weighted success rate (primary services are more important)
+        $primaryDisabled = ($disabledServices | Where-Object { $_ -in $primaryServices }).Count
+        $primaryProtected = ($protectedServices | Where-Object { $_ -in $primaryServices }).Count
+        $primaryFailed = ($failedServices | Where-Object { $_ -in $primaryServices }).Count
          
-         $driverDisabled = ($disabledServices | Where-Object { $_ -in $driverServices }).Count
-         $driverProtected = ($protectedServices | Where-Object { $_ -in $driverServices }).Count
+        $driverDisabled = ($disabledServices | Where-Object { $_ -in $driverServices }).Count
+        $driverProtected = ($protectedServices | Where-Object { $_ -in $driverServices }).Count
          
-         # Primary services success rate (more important)
-         $primarySuccessRate = if ($primaryServices.Count -gt 0) { 
+        # Primary services success rate (more important)
+        $primarySuccessRate = if ($primaryServices.Count -gt 0) { 
              ($primaryDisabled + $primaryProtected) / $primaryServices.Count 
-         } else { 1.0 }
+        }
+        else { 1.0 }
          
-         # Overall success rate (protected services count as partial success)
-         $overallSuccessRate = ($disabledServices.Count + $protectedServices.Count) / $services.Count
+        # Overall success rate (protected services count as partial success)
+        $overallSuccessRate = ($disabledServices.Count + $protectedServices.Count) / $services.Count
          
-         # Effective success rate (what we actually achieved vs what's realistically possible)
-         # Some services may already be disabled or non-existent, which is also success
-         $effectiveSuccessRate = $overallSuccessRate
+        # Effective success rate (what we actually achieved vs what's realistically possible)
+        # Some services may already be disabled or non-existent, which is also success
+        $effectiveSuccessRate = $overallSuccessRate
          
-         # Consider successful if we have reasonable coverage
-         # Lower threshold since some core services are expected to be protected
-         $isSuccessful = ($effectiveSuccessRate -ge 0.4) -or ($primaryDisabled -ge 2)
+        # Consider successful if we have reasonable coverage
+        # Lower threshold since some core services are expected to be protected
+        $isSuccessful = ($effectiveSuccessRate -ge 0.4) -or ($primaryDisabled -ge 2)
          
-         Write-Host "    Service disable summary: $($disabledServices.Count) disabled, $($protectedServices.Count) protected, $($failedServices.Count) failed" -ForegroundColor White
-         Write-Host "    Primary services: $primaryDisabled disabled, $primaryProtected protected, $primaryFailed failed" -ForegroundColor Gray
-         Write-Host "    Effective success rate: $([math]::Round($effectiveSuccessRate * 100, 1))%" -ForegroundColor $(if ($isSuccessful) { "Green" } else { "Yellow" })
+        Write-Host "    Service disable summary: $($disabledServices.Count) disabled, $($protectedServices.Count) protected, $($failedServices.Count) failed" -ForegroundColor White
+        Write-Host "    Primary services: $primaryDisabled disabled, $primaryProtected protected, $primaryFailed failed" -ForegroundColor Gray
+        Write-Host "    Effective success rate: $([math]::Round($effectiveSuccessRate * 100, 1))%" -ForegroundColor $(if ($isSuccessful) { "Green" } else { "Yellow" })
          
-         # Additional context for user
-         if ($protectedServices.Count -gt 0) {
-             Write-Host "    Note: System-protected services are expected and indicate core system security" -ForegroundColor Cyan
-         }
-         if ($disabledServices.Count -ge 2) {
-             Write-Host "    Achievement: Successfully disabled key Defender services" -ForegroundColor Green
-         }
+        # Additional context for user
+        if ($protectedServices.Count -gt 0) {
+            Write-Host "    Note: System-protected services are expected and indicate core system security" -ForegroundColor Cyan
+        }
+        if ($disabledServices.Count -ge 2) {
+            Write-Host "    Achievement: Successfully disabled key Defender services" -ForegroundColor Green
+        }
          
-         return $isSuccessful
+        return $isSuccessful
     }
 
     # Regular method
@@ -642,12 +664,14 @@ if (`$successCount -ge (`$totalCount - 2)) {
                 Set-ItemProperty -Path $servicePath -Name "Start" -Value 4 -Type DWORD -Force
                 if ((Get-ItemProperty -Path $servicePath -Name "Start").Start -eq 4) {
                     Write-Host "    $($script:StatusSymbols.Success) $service has been disabled" -ForegroundColor Green
-                } else {
+                }
+                else {
                     Write-Host "    $($script:StatusSymbols.Warning) $service disable may be incomplete" -ForegroundColor Yellow
                     $allSuccess = $false
                 }
             }
-        } catch {
+        }
+        catch {
             Write-Host "    $($script:StatusSymbols.Error) $service configuration failed" -ForegroundColor Red
             $allSuccess = $false
         }
@@ -671,11 +695,13 @@ function Disable-SpyNetReporting {
         if ($val1 -eq 0 -and $val2 -eq 2) {
             Write-Host "  $($script:StatusSymbols.Success) SpyNet/MAPS reporting has been disabled" -ForegroundColor Green
             return $true
-        } else {
+        }
+        else {
             Write-Host "  $($script:StatusSymbols.Warning) SpyNet/MAPS reporting disable failed" -ForegroundColor Yellow
             return $false
         }
-    } catch {
+    }
+    catch {
         Write-Host "  $($script:StatusSymbols.Error) SpyNet configuration error: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
@@ -695,11 +721,13 @@ function Disable-DefenderNotifications {
         if ($val1 -eq 1 -and $val2 -eq 1) {
             Write-Host "  $($script:StatusSymbols.Success) Defender notifications have been disabled" -ForegroundColor Green
             return $true
-        } else {
+        }
+        else {
             Write-Host "  $($script:StatusSymbols.Warning) Defender notifications disable failed" -ForegroundColor Yellow
             return $false
         }
-    } catch {
+    }
+    catch {
         Write-Host "  $($script:StatusSymbols.Error) Notification configuration error: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
@@ -756,7 +784,8 @@ function Disable-SmartScreen {
         
         Write-Host "  $($script:StatusSymbols.Success) SmartScreen has been disabled" -ForegroundColor Green
         return $true
-    } catch {
+    }
+    catch {
         Write-Host "  $($script:StatusSymbols.Error) SmartScreen disable failed: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
@@ -776,16 +805,19 @@ function Remove-DefenderContextMenu {
                 try {
                     Remove-Item -LiteralPath $path -Recurse -Force
                     Write-Host "    $($script:StatusSymbols.Success) Removed: $path" -ForegroundColor Green
-                } catch {
+                }
+                catch {
                     Write-Host "    $($script:StatusSymbols.Error) Failed to remove: $path" -ForegroundColor Red
                     $allSuccess = $false
                 }
-            } else {
+            }
+            else {
                 Write-Host "    $($script:StatusSymbols.Info) Does not exist, no need to remove: $path" -ForegroundColor Gray
             }
         }
         return $allSuccess
-    } catch {
+    }
+    catch {
         Write-Host "  $($script:StatusSymbols.Error) Context menu removal failed: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
@@ -808,13 +840,16 @@ function Disable-DefenderScheduledTasks {
                 if ($task.State -ne 'Disabled') {
                     Disable-ScheduledTask -TaskName $taskName -TaskPath "\$($taskPath -replace $taskName, '')" | Out-Null
                     Write-Host "    $($script:StatusSymbols.Success) Disabled: $taskName" -ForegroundColor Green
-                } else {
+                }
+                else {
                     Write-Host "    $($script:StatusSymbols.Info) Already disabled: $taskName" -ForegroundColor Gray
                 }
-            } else {
+            }
+            else {
                 Write-Host "    $($script:StatusSymbols.Info) Task does not exist: $taskName" -ForegroundColor Gray
             }
-        } catch {
+        }
+        catch {
             Write-Host "    $($script:StatusSymbols.Error) Disable failed: $taskName" -ForegroundColor Red
             $allSuccess = $false
         }
@@ -830,7 +865,8 @@ function Hide-WindowsSecuritySettings {
         Set-ItemProperty -Path $explorerPolicyPath -Name 'SettingsPageVisibility' -Value "hide:windowsdefender" -Type String -Force
         Write-Host "  $($script:StatusSymbols.Success) Windows Security settings page has been hidden" -ForegroundColor Green
         return $true
-    } catch {
+    }
+    catch {
         Write-Host "  $($script:StatusSymbols.Error) Hide settings page failed: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
@@ -852,7 +888,8 @@ function Block-DefenderUpdates {
         
         Write-Host "  $($script:StatusSymbols.Success) Defender updates have been blocked through policy" -ForegroundColor Green
         return $true
-    } catch {
+    }
+    catch {
         Write-Host "  $($script:StatusSymbols.Error) Block updates failed: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
@@ -868,11 +905,14 @@ Initialize-Script
 # Execute based on parameters
 if ($Phase1) {
     Invoke-Phase1
-} elseif ($Phase2) {
+}
+elseif ($Phase2) {
     Invoke-Phase2
-} elseif ($Phase3) {
+}
+elseif ($Phase3) {
     Invoke-Phase3
-} elseif ($All) {
+}
+elseif ($All) {
     Write-Host "$($script:StatusSymbols.Rocket) Executing All Phases" -ForegroundColor Cyan
     Write-Host ("=" * 50) -ForegroundColor Gray
     Invoke-Phase1
@@ -880,7 +920,8 @@ if ($Phase1) {
     Invoke-Phase3
     Write-Host ""
     Write-Host "All phases completed!" -ForegroundColor Green
-} else {
+}
+else {
     # Default to All phases when no parameter is specified
     Write-Host "$($script:StatusSymbols.Info) No specific phase specified, executing all phases by default" -ForegroundColor Cyan
     Write-Host "$($script:StatusSymbols.Rocket) Executing All Phases" -ForegroundColor Cyan
